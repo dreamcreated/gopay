@@ -25,7 +25,7 @@ func DefaultWechatAppClient() *WechatAppClient {
 type WechatAppClient struct {
 	AppID       string // AppID
 	MchID       string // 商户号ID
-	callbackURL string // 回调地址
+	CallbackURL string // 回调地址
 	Key         string // 密钥
 	PayURL      string // 支付地址
 }
@@ -44,7 +44,7 @@ func (wechat *WechatAppClient) Pay(charge *common.Charge) (string, error) {
 	m["out_trade_no"] = charge.TradeNum
 	m["total_fee"] = fmt.Sprintf("%d", charge.MoneyFee)
 	m["spbill_create_ip"] = util.LocalIP()
-	m["notify_url"] = wechat.callbackURL
+	m["notify_url"] = wechat.CallbackURL
 	m["trade_type"] = "APP"
 
 	sign, err := wechat.GenSign(m)
