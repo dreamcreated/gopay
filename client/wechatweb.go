@@ -7,17 +7,25 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"github.com/guidao/gopay/common"
-	"github.com/guidao/gopay/util"
+	log "github.com/sirupsen/logrus"
+	"github.com/zhubenwuzui/gopay/common"
+	"github.com/zhubenwuzui/gopay/util"
 	"sort"
 	"strings"
 	"time"
 )
 
+const payGateway = "https://api.mch.weixin.qq.com/pay/unifiedorder"
+
 var defaultWechatWebClient *WechatWebClient
 
 func DefaultWechatWebClient() *WechatWebClient {
 	return defaultWechatWebClient
+}
+
+func InitWechatWebClient(c *WechatWebClient) {
+	defaultWechatWebClient = c
+	defaultWechatWebClient.PayURL = payGateway
 }
 
 // WechatWebClient 微信公众号支付
@@ -55,6 +63,7 @@ func (wechat *WechatWebClient) Pay(charge *common.Charge) (string, error) {
 		buf.WriteString(fmt.Sprintf("<%s><![CDATA[%s]]></%s>", k, v, k))
 	}
 	xmlStr := fmt.Sprintf("<xml>%s</xml>", buf.String())
+	log.WithFields(log.Fields{"pay request data": xmlStr}).Debug()
 
 	re, err := HTTPSC.PostData(wechat.PayURL, "text/xml:charset=UTF-8", xmlStr)
 	if err != nil {
