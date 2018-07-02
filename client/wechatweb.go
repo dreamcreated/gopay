@@ -1,9 +1,10 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/md5"
-	"encoding/json"
+	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -39,7 +40,7 @@ type WechatWebClient struct {
 }
 
 // Pay 支付
-func (wechat *WechatWebClient) Pay(charge *common.Charge) (string, error) {
+func (wechat *WechatWebClient) Pay(charge *common.Charge) (map[string]string, error) {
 	var m = make(map[string]string)
 	m["appid"] = wechat.AppID
 	m["mch_id"] = wechat.MchID
@@ -52,9 +53,10 @@ func (wechat *WechatWebClient) Pay(charge *common.Charge) (string, error) {
 	m["trade_type"] = "JSAPI"
 	m["openid"] = charge.OpenID
 
+	var c = make(map[string]string)
 	sign, err := wechat.GenSign(m)
 	if err != nil {
-		return "", err
+		return c, err
 	}
 	m["sign"] = sign
 	// 转出xml结构
@@ -63,29 +65,28 @@ func (wechat *WechatWebClient) Pay(charge *common.Charge) (string, error) {
 		buf.WriteString(fmt.Sprintf("<%s><![CDATA[%s]]></%s>", k, v, k))
 	}
 	xmlStr := fmt.Sprintf("<xml>%s</xml>", buf.String())
-	log.WithFields(log.Fields{"pay request data": xmlStr}).Debug()
+	log.WithFields(log.Fields{"pay request data": xmlStr}).Info()
 
 	re, err := HTTPSC.PostData(wechat.PayURL, "text/xml:charset=UTF-8", xmlStr)
 	if err != nil {
-		return "", err
+		return c, err
 	}
 	var xmlRe common.WeChatReResult
 	err = xml.Unmarshal(re, &xmlRe)
 	if err != nil {
-		return "", err
+		return c, err
 	}
 
 	if xmlRe.ReturnCode != "SUCCESS" {
 		// 通信失败
-		return "", errors.New(xmlRe.ReturnMsg)
+		return c, errors.New(xmlRe.ReturnMsg)
 	}
 
 	if xmlRe.ResultCode != "SUCCESS" {
 		// 支付失败
-		return "", errors.New(xmlRe.ErrCodeDes)
+		return c, errors.New(xmlRe.ErrCodeDes)
 	}
 
-	var c = make(map[string]string)
 	c["appId"] = wechat.AppID
 	c["timeStamp"] = fmt.Sprintf("%d", time.Now().Unix())
 	c["nonceStr"] = util.RandomStr()
@@ -94,22 +95,36 @@ func (wechat *WechatWebClient) Pay(charge *common.Charge) (string, error) {
 
 	sign2, err := wechat.GenSign(c)
 	if err != nil {
-		return "", err
+		return c, err
 	}
 	c["paySign"] = sign2
 
-	jsonC, err := json.Marshal(c)
-	if err != nil {
-		return "", err
-	}
+	return c, nil
 
-	return string(jsonC), nil
+	// jsonC, err := json.Marshal(c)
+	// if err != nil {
+	// 	return "", err
+	// }
+
+	// return string(jsonC), nil
+}
+
+// MD5Sum 计算 32 位长度的 MD5 sum
+func md5sum(txt string) (sum string) {
+	h := md5.New()
+	buf := bufio.NewWriterSize(h, 128)
+	buf.WriteString(txt)
+	buf.Flush()
+	sign := make([]byte, hex.EncodedLen(h.Size()))
+	hex.Encode(sign, h.Sum(nil))
+	sum = string(bytes.ToUpper(sign))
+	return
 }
 
 // GenSign 产生签名
 func (wechat *WechatWebClient) GenSign(m map[string]string) (string, error) {
 	delete(m, "sign")
-	delete(m, "Key")
+	delete(m, "key")
 	var signData []string
 	for k, v := range m {
 		if v != "" {
@@ -119,17 +134,10 @@ func (wechat *WechatWebClient) GenSign(m map[string]string) (string, error) {
 
 	sort.Strings(signData)
 	signStr := strings.Join(signData, "&")
-	signStr = signStr + "&Key=" + wechat.Key
-	c := md5.New()
-	_, err := c.Write([]byte(signStr))
-	if err != nil {
-		return "", err
-	}
-	signByte := c.Sum(nil)
-	if err != nil {
-		return "", err
-	}
-	return strings.ToUpper(fmt.Sprintf("%x", signByte)), nil
+	signStr = signStr + "&key=" + wechat.Key
+	log.WithFields(log.Fields{"signStr": signStr}).Info()
+
+	return md5sum(signStr), nil
 }
 
 // CheckSign 检查签名
